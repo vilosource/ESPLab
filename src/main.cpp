@@ -3,106 +3,81 @@
 #include <WebServer.h>
 #include <Preferences.h>
 #include <LiquidCrystal_I2C.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
+
 #include "WifiConfigManager.h" 
 
-const char* ssid = "ESP32-SoftAP";
-const char* password = "12345678"; // Minimum 8 characters
+#include "AiEsp32RotaryEncoder.h"
 
 
-WifiConfigManager* wifiConfigManager;
+#if defined(ESP8266)
+#define ROTARY_ENCODER_A_PIN D6
+#define ROTARY_ENCODER_B_PIN D5
+#define ROTARY_ENCODER_BUTTON_PIN D7
+#else
+#define ROTARY_ENCODER_A_PIN 25
+#define ROTARY_ENCODER_B_PIN 26
+#define ROTARY_ENCODER_BUTTON_PIN 27  
+#endif
+#define ROTARY_ENCODER_VCC_PIN -1 /* 27 put -1 of Rotary encoder Vcc is connected directly to 3,3V; else you can use declared output pin for powering rotary encoder */
 
+//depending on your encoder - try 1,2 or 4 to get expected behaviour
+//#define ROTARY_ENCODER_STEPS 1
+//#define ROTARY_ENCODER_STEPS 2
+#define ROTARY_ENCODER_STEPS 4
 
-void taskRunWifiConfigManager(void *pvParameters) {
-  /** 
-   * Launches the AP and starts the web server. 
-   * **/
-  wifiConfigManager = new WifiConfigManager(ssid, password);
-  wifiConfigManager->startAP();
-  wifiConfigManager->startConfigWebServer();
-  
-  while (true) {
-    wifiConfigManager->handleClient();
-    delay(1);
-  }
+//instead of changing here, rather change numbers above
+AiEsp32RotaryEncoder rotaryEncoder = AiEsp32RotaryEncoder(ROTARY_ENCODER_A_PIN, ROTARY_ENCODER_B_PIN, ROTARY_ENCODER_BUTTON_PIN, ROTARY_ENCODER_VCC_PIN, ROTARY_ENCODER_STEPS);
+
+void rotary_onButtonClick()
+{
+	static unsigned long lastTimePressed = 0;
+	//ignore multiple press in that time milliseconds
+	if (millis() - lastTimePressed < 500)
+	{
+		return;
+	}
+	lastTimePressed = millis();
+	Serial.print("button pressed ");
+	Serial.print(millis());
+	Serial.println(" milliseconds after restart");
 }
 
-void startWifi() {
-  int count = 0;
-  bool connected = false;
-  Preferences preferences;
-  preferences.begin("wifi", true);
-  String wifi_ssid = preferences.getString("wifi_ssid", "");
-  String wifi_password = preferences.getString("wifi_password", "");
-  preferences.end();
+void rotary_loop()
+{
+	//dont print anything unless value changed
+	if (rotaryEncoder.encoderChanged())
+	{
+		Serial.print("Value: ");
+		Serial.println(rotaryEncoder.readEncoder());
+	}
+	if (rotaryEncoder.isEncoderButtonClicked())
+	{
+		rotary_onButtonClick();
+	}
+}
 
-  if (wifi_ssid.length() > 0 && wifi_password.length() > 0) {
-    Serial.println("Connecting to WiFi...");
-    WiFi.begin(wifi_ssid.c_str(), wifi_password.c_str());
-    while (WiFi.status() != WL_CONNECTED || count < 3) {
-      Serial.println("Connecting to WiFi...");
-      delay(1000);
-      count += 1;
-      if (count == 2) {
-        Serial.println("Failed to connect to WiFi");
-        break;
-      }
-      if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("Connected to WiFi");
-        connected = true;
-        break;
-      }
-    }
-    if (connected) {
-      Serial.println("Connected to WiFi");
-      Serial.println("IP address: ");
-      Serial.println(WiFi.localIP());
+void IRAM_ATTR readEncoderISR()
+{
+	rotaryEncoder.readEncoder_ISR();
+	//rotary_loop();
 
-    } else {
-      Serial.println("Failed to connect to WiFi");
-      //Stop the WiFi connection
-      WiFi.disconnect();
-    } 
-  }  
-  else{
-    /** If there is no saved credentials then we should launch the 
-     * WifiConfigManager to allow the user to enter the credentials
-     * This is done by creating a new task that will run the WifiConfigManager
-     */
+}
 
-    Serial.println("No WiFi credentials found. Going to AP mode");
-    
-    xTaskCreatePinnedToCore(
-      taskRunWifiConfigManager, /* Function to implement the task */
-      "taskRunWifiConfigManager", /* Name of the task */
-      10000,  /* Stack size in words */
-      NULL,  /* Task input parameter */
-      1,  /* Priority of the task */
-      NULL,  /* Task handle. */
-      0); /* Core where the task should run */
-  }
-} 
+
 
 void setup() {
-  String wifi_ssid;
-  String wifi_password;
 
-  Preferences preferences;
-  preferences.begin("wifi", false);
-  wifi_ssid = preferences.getString("wifi_ssid", "");
-  wifi_password = preferences.getString("wifi_password", "");
-  preferences.end();
 
   Serial.begin(115200);
-  startWifi();
-  Serial.print("WiFi SSID: ");
-  Serial.println(wifi_ssid);
-  Serial.print("WiFi Password: ");
-  Serial.println(wifi_password);
-  Serial.println("Wifi IP Address: "+ WiFi.localIP().toString());
-  Serial.println("Wifi MAC Address: "+ WiFi.macAddress());
-}
+  Serial.println("Starting...");
+  //startWifi();
 
+  rotaryEncoder.begin();
+  rotaryEncoder.setup(readEncoderISR);
+  bool circleValues = false;
+  rotaryEncoder.setAcceleration(250);
+}  
 void loop() {
+  rotary_loop();
+  delay(100);
 }

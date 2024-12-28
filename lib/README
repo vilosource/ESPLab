@@ -44,3 +44,10 @@ libraries scanning project source files.
 
 More information about PlatformIO Library Dependency Finder
 - https://docs.platformio.org/page/librarymanager/ldf.html
+
+git clone https://github.com/igorantolic/ai-esp32-rotary-encoder.git
+
+
+Install both DHT and Adafruit.
+https://github.com/adafruit/DHT-sensor-library
+https://github.com/adafruit/Adafruit_Sensor.git
